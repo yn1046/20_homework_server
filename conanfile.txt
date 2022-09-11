@@ -1,0 +1,8 @@
+[requires]
+nlohmann_json/3.10.3
+fmt/8.1.1
+botan/2.19.1
+date/3.0.1
+
+[generators]
+cmake
