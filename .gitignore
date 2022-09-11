@@ -1,0 +1,14 @@
+/cmake-build-debug/
+/conanbuildinfo.txt
+/conan.lock
+/conanbuildinfo.cmake
+/graph_info.json
+/conaninfo.txt
+/cmake_install.cmake
+/CMakeCache.txt
+/console_chat.cbp
+/Makefile
+/bin/
+/Testing/
+/CMakeFiles/
+/.idea
