@@ -11,66 +11,75 @@ void cc::ChatController::initialize() {
 }
 
 void cc::ChatController::accept_connections() {
-    while(true)
-    {
+    while (!isStopping) {
         int client_socket = _connectionService->accept_client();
 
-        seed++;
-        thread t(handle_client, client_socket, seed);
+        ++seed;
+        thread t(&cc::ChatController::handle_client, this, client_socket, seed);
         lock_guard<mutex> guard(clients_mutex);
-        clients.push_back({seed, string("Anonymous"),client_socket,(move(t))});
+        Session session{seed, string("Anonymous"), false, client_socket, (move(t))};
+        clients.insert({seed, move(session)});
     }
 
-    for(int i=0; i<clients.size(); i++)
-    {
-        if(clients[i].th.joinable())
-            clients[i].th.join();
+    for (auto&[_, client]: clients) {
+        if (client.th.joinable())
+            client.th.join();
     }
 
-    close(server_socket);
-    return 0;
+    _connectionService->shutdown();
+    exit(EXIT_SUCCESS);
 }
 
-int cc::ChatController::get_action() {
-    int action = 0;
-    do {
-        cout << (action < 0 || action > 2 ? "Incorrect input"
-                                          : "Welcome to ConsoleChat!")
-             << endl;
-        cout << "Please select an action:" << endl;
-        cout << "1 - login" << endl;
-        cout << "2 - sign up" << endl;
-        cout << "0 - exit" << endl;
 
-        cin >> action;
-    } while (action < 0 || action > 2);
+void ChatController::handle_client(int client_socket, uint32_t id) {
+    auto action = _connectionService->receive_message<ACTION_TYPES>(client_socket);
 
-    return action;
+    switch (action) {
+        case ACTION_TYPES::LOGIN:
+            do_login(id);
+            break;
+        case ACTION_TYPES::SIGNUP:
+            do_signup(id);
+            break;
+        case ACTION_TYPES::QUIT:
+        default:
+            return do_disconnect(id);
+
+    }
+
 }
 
-void cc::ChatController::do_signup() {
+
+// WIP: should change cout to send
+void cc::ChatController::do_signup(uint32_t id) {
     string login, password, pass_hash;
+
     do {
+        login = _connectionService->receive_message<string>(clients[id].socket);
         cout << "Choose login" << endl;
         cin >> login;
         if (_userService->find_user(login)) {
             cout << "Login already in use" << endl;
         }
     } while (_userService->find_user(login));
+
     cout << "Choose password" << endl;
-    cin >> password;
+    password = _connectionService->receive_message<string>(clients[id].socket);
     pass_hash = gen_password(password);
     User user{.login = login, .password = pass_hash};
     User created_user = _userService->add_user(user);
 
-    enter_chat(created_user);
+    clients[id].online = true;
+
+    expect_message(id);
 }
 
-void cc::ChatController::do_login() {
+
+// WIP: should change cout to send
+void cc::ChatController::do_login(uint32_t id) {
     string login, password, pass_hash;
     do {
-        cout << "Enter login" << endl;
-        cin >> login;
+        login = _connectionService->receive_message<string>(clients[id].socket);
         if (!_userService->find_user(login)) {
             cout << "User not found" << endl;
         }
@@ -78,13 +87,15 @@ void cc::ChatController::do_login() {
     User user = _userService->get_user(login);
     do {
         cout << "Enter password" << endl;
-        cin >> password;
+        password = _connectionService->receive_message<string>(clients[id].socket);
         if (!Botan::check_bcrypt(password, user.password)) {
             cout << "Bad password" << endl;
         }
     } while (!Botan::check_bcrypt(password, user.password));
 
-    enter_chat(user);
+    clients[id].online = true;
+
+    expect_message(id);
 }
 
 string cc::ChatController::gen_password(const string &password) {
@@ -94,41 +105,89 @@ string cc::ChatController::gen_password(const string &password) {
     return pass_hash;
 }
 
-void cc::ChatController::do_input() {
-    string input;
-    getline(cin, input);
-    input = trim(input);
-    if (input.length() > 0) {
-        if (input[0] == '@') {
-            auto receiver_nick = input.substr(1, input.find(' ') - 1);
-            if (_userService->find_user(receiver_nick)) {
-                auto receiver = _userService->get_user(receiver_nick);
-                auto text = input.substr(input.find(' ') + 1);
-                if (text.empty()) {
-                    cout << "Incorrect format. Type /h for help." << endl;
+void cc::ChatController::do_disconnect(uint32_t id) {
+    string name = clients[id].name;
+    {
+        lock_guard<mutex> lock(clients_mutex);
+        _connectionService->close_client(clients[id].socket);
+        clients[id].th.detach();
+        clients.erase(id);
+    }
+    broadcast_alert("::: " + name + " has disconnected :::");
+}
+
+void cc::ChatController::expect_message(uint32_t id) {
+    bool disconnecting = false;
+    while (!disconnecting) {
+        string message = trim(_connectionService->receive_message<string>(clients[id].socket));
+
+        if (message.length() > 0) {
+            if (message[0] == '@') {
+                auto receiver_nick = message.substr(1, message.find(' ') - 1);
+                if (_userService->find_user(receiver_nick)) {
+                    auto receiver = find(begin(clients), end(clients),
+                                         [&receiver_nick](Session &c) { return c.name == receiver_nick && c.online; });
+                    if (receiver != clients.end()) {
+                        auto text = message.substr(message.find(' ') + 1);
+                        if (text.empty()) {
+                            _connectionService->send_message<string>(clients[id].socket,
+                                                                     "Incorrect format. Type /h for help.");
+                        } else {
+                            send_message(id, receiver->second.id, text);
+                        }
+                    } else {
+                        _connectionService->send_message<string>(clients[id].socket,
+                                                                 "User @" + receiver_nick + " ");
+                    }
+
                 } else {
-                    Message message{.sender = _user->login,
-                            .text = text,
-                            .is_personal=true,
-                            .between={*_user, receiver}};
-                    _chatService->post_message(message);
+                    _connectionService->send_message<string>(clients[id].socket,
+                                                             "User @" + receiver_nick + " not found.");
+                }
+            } else if (message[0] == '/') {
+                if (message[1] == 'h') {
+                    const string help = "\nCOMMANDS:\n"
+                                        "/h — show this help\n"
+                                        "/q or /0 — quit chat\n"
+                                        "SENDING PERSONAL MESSAGE:\n"
+                                        "@<username> <message>\n"
+                                        "example: @john hi!";
+
+                    _connectionService->send_message<string>(clients[id].socket,
+                                                             help);
+                } else if (message[1] == 'q' || message[1] == '0') {
+                    disconnecting = true;
+                } else {
+                    _connectionService->send_message<string>(clients[id].socket, "Unknown command. Type /h for help.");
                 }
             } else {
-                cout << "User @" + receiver_nick + " not found." << endl;
+                broadcast_message(id, message);
             }
-        } else if (input[0] == '/') {
-            if (input[1] == 'h') {
-                show_help();
-            } else if (input[1] == 'q' || input[1] == '0') {
-                exit(0);
-            } else {
-                cout << "Unknown command. Type /h for help." << endl;
-            }
-        } else {
-            Message message{.sender = _user->login, .text = input};
-            _chatService->post_message(message);
         }
-        show_messages();
     }
-    do_input();
+
+    do_disconnect(id);
+}
+
+void cc::ChatController::send_message(uint32_t id, uint32_t to_id, const string &message) {
+    _connectionService->send_message<string>(clients[id].socket,
+                                             "(PM) [YOU to " + clients[to_id].name + "] " + message);
+    _connectionService->send_message<string>(clients[to_id].socket,
+                                             "(PM) [" + clients[id].name + " to YOU] " + message);
+}
+
+void ChatController::broadcast_message(uint32_t id, const string &message) {
+    lock_guard<mutex> lock(clients_mutex);
+    for (auto &[k, v]: clients) {
+        if (k != id && v.online) {
+            _connectionService->send_message<string>(v.socket, "[" + clients[id].name + "] " + message);
+        }
+    }
+}
+
+void ChatController::broadcast_alert(const string &text) {
+    lock_guard<mutex> lock(clients_mutex);
+    for (auto &[k, v]: clients) {
+        _connectionService->send_message<string>(v.socket, text);
+    }
 }

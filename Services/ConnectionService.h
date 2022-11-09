@@ -34,6 +34,7 @@ namespace cc {
         template<typename T>
         T receive_message(int client_socket);
 
+        void close_client(int client_socket);
         void shutdown();
     };
 }

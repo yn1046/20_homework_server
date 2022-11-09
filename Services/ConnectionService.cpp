@@ -56,13 +56,16 @@ void cc::ConnectionService::shutdown() {
 int cc::ConnectionService::accept_client() {
     struct sockaddr_in client;
     int client_socket;
-    unsigned int len=sizeof(sockaddr_in);
+    unsigned int len = sizeof(sockaddr_in);
 
-    if((client_socket=accept(server_socket,(struct sockaddr *)&client,&len))==-1)
-    {
+    if ((client_socket = accept(server_socket, (struct sockaddr *) &client, &len)) == -1) {
         perror("accept error: ");
         exit(-1);
     }
 
     return client_socket;
+}
+
+void cc::ConnectionService::close_client(int client_socket) {
+    close(client_socket);
 }
