@@ -23,10 +23,10 @@ namespace cc {
 
     class ChatController {
     private:
-        unsigned int seed;
+        unsigned int seed = 0;
         unordered_map<uint32_t, Session> clients;
         mutex clients_mutex;
-        bool isStopping = false;
+        bool stopping = false;
 
         ConnectionService *_connectionService;
         UserService *_userService;
@@ -43,9 +43,11 @@ namespace cc {
         void do_login(uint32_t id);
         void do_disconnect(uint32_t id);
         void expect_message(uint32_t id);
+        void do_personal_message(uint32_t id, const string &message);
         void send_message(uint32_t id, uint32_t to_id, const string &message);
         void broadcast_message(uint32_t id, const string &message);
         void broadcast_alert(const string &text);
         static string gen_password(const string &password);
+        void do_stop();
     };
 } // namespace cc

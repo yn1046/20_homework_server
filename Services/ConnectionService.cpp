@@ -24,31 +24,6 @@ void cc::ConnectionService::connect() {
 
 }
 
-template<typename T>
-void cc::ConnectionService::send_message(int client_socket, T value) {
-    send(client_socket, &value, sizeof(value), 0);
-}
-
-template<>
-void cc::ConnectionService::send_message<string>(int client_socket, const string str) {
-    const char *cstr = str.c_str();
-    send(client_socket, cstr, sizeof(cstr), 0);
-}
-
-template<typename T>
-T cc::ConnectionService::receive_message(int client_socket) {
-    T value;
-    recv(client_socket, &value, sizeof(value), 0);
-    return value;
-}
-
-template<>
-string cc::ConnectionService::receive_message<string>(int client_socket) {
-    char str[MESSAGE_LEN];
-    recv(client_socket, str, sizeof(str), 0);
-    return string() + str;
-}
-
 void cc::ConnectionService::shutdown() {
     close(server_socket);
 }
@@ -68,4 +43,15 @@ int cc::ConnectionService::accept_client() {
 
 void cc::ConnectionService::close_client(int client_socket) {
     close(client_socket);
+}
+
+void cc::ConnectionService::send_message_string(int client_socket, const string &str) {
+    const char *cstr = str.c_str();
+    send(client_socket, cstr, MESSAGE_LEN, 0);
+}
+
+string cc::ConnectionService::receive_message_string(int client_socket) {
+    char str[MESSAGE_LEN];
+    recv(client_socket, str, MESSAGE_LEN, 0);
+    return string() + str;
 }

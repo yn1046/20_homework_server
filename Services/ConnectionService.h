@@ -17,7 +17,7 @@
 using namespace std;
 
 #define MESSAGE_LEN 1024
-#define PORT 10000
+#define PORT 10011
 
 namespace cc {
     class ConnectionService {
@@ -29,10 +29,20 @@ namespace cc {
         int accept_client();
 
         template<typename T>
-        void send_message(int client_socket, T value);
+        void send_message(int client_socket, T value) {
+            send(client_socket, &value, sizeof(value), 0);
+        }
+
+        void send_message_string(int client_socket, const string &str);
 
         template<typename T>
-        T receive_message(int client_socket);
+        T receive_message(int client_socket){
+            T value;
+            recv(client_socket, &value, sizeof(value), 0);
+            return value;
+        }
+
+        string receive_message_string(int client_socket);
 
         void close_client(int client_socket);
         void shutdown();
