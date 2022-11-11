@@ -21,29 +21,42 @@ Vasiliy Nesterovich
 
 - Хранить даннные решено в JSON — для простоты и большей переносимости. С этой целью установлена
   библиотека *<span style="color:#03dbfc">nlohmann/json</span>*.
-- Пароли, разумеется, лучше хешировать. Используется bcrypt из *<span style="color:#03dbfc">crypto++</span>*.
+- Пароли, разумеется, лучше хешировать. Используется bcrypt из *<span style="color:#03dbfc">Botan</span>*.
 
 ##### Описание пользовательских типов и функций в проекте
 
-**Модели:** _Message_, _User_. Описывают сообщения и пользователей соответственно.
+**Модели:** _User_. Описывает пользователей.
 
-**Сервисы:** ChatService, UserService. Отвечают за получение, преобразование, добавление и хранение сообщений и
-пользователей соответственно.
+**Сервисы:** ConnectionService, UserService. Первый отвечает за сетевую работу, второй — за хранение пользователей.
 
-`Методы ChatService`
+`Методы ConnectionService`
 
 ```c++
-// Инициализация при создании класса. Создаёт пустой файл данных, если его ещё нет.
-void initialize();
+// Создать сокет и ожидать подключения (адрес и порт заданы в препроцессоре).
+void connect();
 
-// Считать из файла и получить набор сообщений.
-vector<Message> get_messages();
+// Принять входящее подключение.
+int accept_client();
 
-// Получить отформатированные сообщения в переписке данного пользователя.
-vector<string> get_formatted_messages(const User *user);
+// Отправить клиенту сообщение произвольного типа.
+template<typename T>
+void send_message(int client_socket, T value);
 
-// Отправить сообщение (записать в файл).
-void post_message(Message &message);
+// Отправить клиенту строку.
+void send_message_string(int client_socket, const string &str);
+
+// Получить от клиента сообщение произвольного типа.
+template<typename T>
+T receive_message(int client_socket);
+
+// Получить от клиента строку.
+string receive_message_string(int client_socket);
+
+// Закрыть соединение с клиентом.
+void close_client(int client_socket);
+
+// Закрыть сокет.
+void shutdown();
 ```
 
 `Методы UserService`
@@ -70,47 +83,44 @@ bool find_user(string &login);
 `Методы ChatController`
 
 ```c++
-// Выбор начального действия: вход, регистрация, выход.
+// Открыть сокет и начать принимать подключения.
 void initialize();
 
-// Выполнить регистрацию.
-void do_signup();
+// Начать обслуживать входящие подключения.
+void accept_connections();
 
-// Выполнить вход.
-void do_login();
+// Обработать подключившегося клиента.
+void handle_client(int client_socket, uint32_t id);
 
-// Открыть чат (после успешного входа/регистрации).
-void enter_chat(const User &user);
+// Выполнить регистрацию клиента.
+void do_signup(uint32_t id);
 
-// Отобразить сообщения для данного пользователя.
-void show_messages();
+// Выполнить вход клиента.
+void do_login(uint32_t id);
 
-// Считать ввод.
-void do_input();
+// Отключить клиента.
+void do_disconnect(uint32_t id);
 
-// Отобразить подсказки.
-static void show_help();
+// Ожидать очередное сообщение от клиента и затем обработать его.
+void expect_message(uint32_t id);
 
-// Считать начальное действие.
-static int get_action();
+// Обработать личное сообщение от одного клиента к другому.
+void do_personal_message(uint32_t id, const string &message);
 
-// Сгенерировать хеш для пароля.
+// Послать обработанное личное сообщение. 
+void send_message(uint32_t id, uint32_t to_id, const string &message);
+
+// Послать сообщение в общий чат.
+void broadcast_message(uint32_t id, const string &message);
+
+// Послать уведомление всем клиентам.
+void broadcast_alert(const string &text);
+
+// Сгенерировать хэш пароля.
 static string gen_password(const string &password);
-```
 
-Также в коде присутствует хелпер _strutil_ для обработки строк.
-
-`Функции strutil`
-
-```c++
-// Обрезать все пробелы слева.
-std::string ltrim(const std::string &s)
-
-// Обрезать все пробелы справа.
-std::string rtrim(const std::string &s)
-
-// Обрезать все пробелы и слева, и справа.
-std::string trim(const std::string &s)
+// Остановить сервер.
+void do_stop();
 ```
 
 ##### Пояснение, как были распределены задачи в команде (кто какую часть проекта реализовывал)

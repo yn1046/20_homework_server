@@ -1,6 +1,5 @@
 #include "ChatController.h"
 #include "../Enums/ActionTypes.h"
-#include "../Helpers/strutil.h"
 #include <botan/auto_rng.h>
 #include <botan/bcrypt.h>
 #include <iostream>
@@ -128,16 +127,14 @@ void cc::ChatController::expect_message(uint32_t id) {
 
     bool disconnecting = false;
     while (!disconnecting) {
-        string message = trim(_connectionService->receive_message_string(clients[id].socket));
+        string message = _connectionService->receive_message_string(clients[id].socket);
 
-        if (message.length() > 0) {
-            if (message[0] == '@') {
-                do_personal_message(id, message);
-            } else if (message == "/q") {
-                disconnecting = true;
-            } else {
-                broadcast_message(id, message);
-            }
+        if (message[0] == '@') {
+            do_personal_message(id, message);
+        } else if (message == "/q") {
+            disconnecting = true;
+        } else {
+            broadcast_message(id, message);
         }
     }
 
