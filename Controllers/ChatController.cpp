@@ -62,14 +62,21 @@ void cc::ChatController::do_signup(uint32_t id) {
 
 
     password = _connectionService->receive_message_string(clients[id].socket);
-    pass_hash = gen_password(password);
-    User user{.login = login, .password = pass_hash};
-    User created_user = _userService->add_user(user);
 
-    clients[id].name = user.login;
-    clients[id].online = true;
+    try {
+        pass_hash = gen_password(password);
+        User user{.login = login, .password = pass_hash};
+        User created_user = _userService->add_user(user);
 
-    expect_message(id);
+        clients[id].name = created_user.login;
+        clients[id].online = true;
+        _connectionService->send_message<bool>(clients[id].socket, true);
+
+        expect_message(id);
+    } catch (exception &ex) {
+        _connectionService->send_message<bool>(clients[id].socket, false);
+        return;
+    }
 }
 
 void cc::ChatController::do_login(uint32_t id) {
@@ -95,7 +102,6 @@ void cc::ChatController::do_login(uint32_t id) {
     clients[id].name = user.login;
     clients[id].online = true;
 
-    broadcast_alert("\t::: " + clients[id].name + " has connected :::");
     expect_message(id);
 }
 
@@ -118,6 +124,8 @@ void cc::ChatController::do_disconnect(uint32_t id) {
 }
 
 void cc::ChatController::expect_message(uint32_t id) {
+    broadcast_alert("\t::: " + clients[id].name + " has connected :::");
+
     bool disconnecting = false;
     while (!disconnecting) {
         string message = trim(_connectionService->receive_message_string(clients[id].socket));

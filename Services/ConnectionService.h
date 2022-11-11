@@ -17,7 +17,7 @@
 using namespace std;
 
 #define MESSAGE_LEN 1024
-#define PORT 10011
+#define PORT 10012
 
 namespace cc {
     class ConnectionService {
